@@ -1,10 +1,7 @@
-import bcrypt
 from flask import Flask, request, jsonify, json
 from flask_pymongo import PyMongo
 from pymongo import MongoClient
 from bson import ObjectId
-
-import TwilioRestClient
 from twilio.rest import TwilioRestClient
 
 # DB setup
@@ -53,7 +50,7 @@ id_key = '_id'
 # errors
 def param_error(missing_params):
     param_string = ','.join(missing_params)
-    error_message = ['error':'You are missing the following parameters: %s' ] % param_string
+    error_message = {'error':'You are missing the following parameters: %s' } % param_string
     return jsonify(error_message)
 
 auth_error = jsonify({'error': 'Authentication failed'})
@@ -80,7 +77,7 @@ def authenticate(headers):
     try:
         token = headers[auth_key]
         check_token = hives.find_one({id_key: ObjectId(token)})
-        if check_token return True else return False
+        return check_token is not None
 
     except KeyError:
         return False
@@ -115,7 +112,6 @@ Returns:
 #     drone = [:]
 #     for num in number_data:
 
-
 '''
 Sends given message to all numbers via twilio
 
@@ -142,7 +138,7 @@ def create_drones(numbers, hive_id):
     drones = []
     for num in numbers:
         if drones.find_one({number_key:num}) is None:
-            drone = {:}
+            drone = {}
             drone[numbers_key] = num
             drone[last_request_key] = 'empty'
             drone[last_response_key] = 'empty'
@@ -157,7 +153,7 @@ def create_drones(numbers, hive_id):
 # change the last_request of each drone to most recent message
 def update_drones(numbers, message):
     for num in numbers:
-        drones.update_one{{number_key: num }, $'set'{last_request_key: message}}
+        drones.update_one({number_key: num}, {'$set':{last_request_key: message}})
 
 
 
@@ -213,7 +209,7 @@ Assume:
 
 #TODO: Authentication on this route
 @app.route('/signals')
-def send_signal):
+def send_signal():
 
     # check for missing values
     missing_body = validate_params([command_key, options_key], request.form)
@@ -259,13 +255,27 @@ def relay_response():
     account_sid_from_twilio = request.args.get(account_sid_key)
 
     if not account_sid_from_twilio == account_sid:
-        return jsonify{'error': 'this accountSid does not match'}
+        return jsonify({'error': 'this accountSid does not match'})
 
     #TODO: check that the drones exists before you update it.
         # however this should exist if its hitting this endpoint
     drones.update_one({'number_key': from_num}, { '$set':{last_response_key:body}})
 
 
+@app.route('hives/<hive_id>')
+def pull_request(hive_id=None):
+
+    # hive_id not provided
+    if not hive_id:
+        return jsonify({'error': 'this route requires a valid hive_id'})
+
+    hive = hives.find_one({id_key:ObjectId(hive_id)})
+    # hive with id not found
+    if not hive:
+        return jsonify({'error': 'not a valid hive id'})
+
+    # return the desired hive info
+    return jsonify(hive)
 
 
 
