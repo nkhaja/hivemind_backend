@@ -14,12 +14,27 @@ db = client.database
 hives = db.hives
 drones = db.drones
 
+# Twilio setup
+client = TwilioRestClient(account_sid, auth_token)
+
+#security
+account_sid = "secret"
+
 # initiate app
 app = Flask(__name__)
 
-# constants
+# twilio response constants
+body_key = 'body'
+account_sid_key = 'AccountSid'
+from_key = 'From'
+
+# hive keys
 hive_name_key = 'hive_name'
+hive_token_key = 'hive_token'
 date_created_key = 'date_created'
+
+# drone keys
+number_key = 'number'
 
 ## signal keys
 command_key = 'command'
@@ -58,7 +73,7 @@ Returns:
 
 '''
 
-def validate(headers):
+def authenticate(headers):
     try:
         token = headers[auth_key]
         check_token = hives.find_one({id_key: ObjectId(token)})
@@ -92,10 +107,10 @@ Returns:
     a string array of the numbers
 
 '''
-def parse_numbers(numbers_data):
-    #Drone = [Number:Hive]
-    drone = [:]
-    for num in number_data:
+# def parse_numbers(numbers_data):
+#     #Drone = [Number:Hive]
+#     drone = [:]
+#     for num in number_data:
 
 
 '''
@@ -111,7 +126,6 @@ Params:
 
 # TODO Ensure all numbers beging with '+'
 def send_messages(numbers, message):
-    client = TwilioRestClient(account_sid, auth_token)
 
     # TODO: Does this function send the messages or just prep them?
     for num in numbers:
@@ -121,8 +135,24 @@ def send_messages(numbers, message):
     	body = message
         )
 
-def create_drones(numbers):
-    pass
+def create_drones(numbers, hive_id):
+    drones = []
+    for num in numbers:
+        drone = {:}
+        drone[numbers_key] = num
+        drone[last_request_key] = 'empty'
+        drone[hive_token_key] = hive_id
+
+        # insert the drone and get its id
+        drone_id = drones.insert_one(drone)
+
+        #get relevant hive and update its drones property
+        hives.find_one({id_key: ObjectId(hive_id)})
+
+        
+
+        allTasks.update_one({selfId:ObjectId(someTaskId)}, {'$set':newTask})
+
 
 
 @app.route('/')
@@ -131,11 +161,6 @@ def welcome():
 
 def validate_params(param_keys, args):
     # find the missing keys
-    missing_params = []
-    for key in param_keys:
-        if key not in args:
-            missing_params.append(key)
-    # equivalent:
     missing_params = [key for key in param_keys if key not in args]
     return missing_params
 
@@ -155,18 +180,16 @@ def get_token_for_hive:
     missing = validate_params([hive_name_key, date_created_key], request.args)
     if missing:
         return make_error_response(missing)
-    # try:
 
     hive_name = request.args.get(hive_name_key)
     date_created = request.args.get(date_created_key)
     hive_name_dict = {hive_name_key: hive_name, date_created_key: date_created}
     hive_id = hives.insert_one(hive_name_dict).id
 
-    return hive_id
+    # add the token to the dict if accepted
+    hive_name_dict[hive_token_key] = hive_id
 
-    # except KeyError:
-    #
-    #     return param_error([KeyError.message])
+    return jsonify(hive_name_dict)
 
 '''
 Signal Structure:
@@ -181,31 +204,42 @@ Assume:
     * len(options) -- 0 to 3 max
 '''
 
+#TODO: Authentication on this route
 @app.route('/signals')
 def send_signal():
-    if not validate(request.headers):
-        return auth_error
 
-    try:
-        body = request.form
-        command = body[command_key]
-        options_data = body[options_key]
-        options = parse_options(options_data)
-
-        #TODO: Check that the string format of these numbers is okay
-        numbers = body[numbers_key]
-
-        message = command + options
-        send_messages(numbers, message)
+    missing = validate_params([hive_name_key, date_created_key], request.args)
+    if missing:
+        return make_error_response(missing)
 
 
-    except KeyError:
-        return param_error([param_error_name])
+    body = request.form
+    command = body[command_key]
+    options_data = body[options_key]
+    options = parse_options(options_data)
+
+    #TODO: Check that the string format of these numbers is okay
+    numbers = body[numbers_key]
+
+    message = command + options
+    update_drones(numbers, message)
+    send_messages(numbers, message)
+
+
+
 
 # Relay the messages that come from Twilio here
 @app.route('relay')
 def relay_response():
-    pass
+    if not authenticate(request.headers):
+        return auth_error
+
+    # get the desired params from the twilio response
+    missing = validate_params([body_key, date_created_key], request.args)
+    body = request.args.get(body_key)
+    account_sid = request.args.get(account_sid_key)
+
+
 
 
 if __name__ == "__main__":
