@@ -13,6 +13,8 @@ hives = db.hives
 drones = db.drones
 
 #security
+account_sid = "ACab39f4aed328c466f18ba9f003c65f94"
+auth_token = "5bdbe609ed7bcc9f053281b6ecff441d"
 
 
 # Twilio setup
@@ -144,12 +146,13 @@ def send_messages(numbers, message):
 
         message = client.api.account.messages.create(
     	to = num,
-    	from_= "+650825-9655",
+    	from_= '+14156609449',
     	body = message
         )
 
 def create_drones(numbers, hive_id):
     drones.drop()
+    print(len(numbers))
     for num in numbers:
         if drones.find_one({number_key:num}) is None:
             drone = {}
@@ -158,13 +161,18 @@ def create_drones(numbers, hive_id):
             drone[last_response_key] = 'empty'
             drone[hive_token_key] = hive_id
 
-            print(drone)
+            print('checkpoint A')
 
             # insert the drone and get its id
             drone_id = drones.insert_one(drone).inserted_id
 
+            print('checkpoint B')
+
             # get relevant hive and update its drones property
             hives.update_one({id_key: ObjectId(hive_id)}, { '$addToSet':{drones_key:drone_id} })
+
+            print('checkpoint C')
+
 
 # change the last_request of each drone to most recent message
 def update_drones(numbers, message):
@@ -233,29 +241,31 @@ Assume:
 @app.route('/signals', methods = ['POST'])
 def send_signal():
 
+    print(request.json)
+    print(request.data)
     # check for missing values
-    missing_body = validate_params([command_key, options_key], request.form)
+    missing_body = validate_params([command_key, options_key], request.json)
     missing_params = validate_params([hive_token_key], request.args)
     if missing_body or missing_params:
         return make_error_response(missing_body + missing_params)
 
     #assign desired values to vars
-    body = request.form
+    body = request.json
     command = body[command_key]
-    options_data = body[options_key]
+    options_data = list(body[options_key])
     options = parse_options(options_data)
     hive_id = request.args.get(hive_token_key)
 
     #TODO: Check that the string format of these numbers is okay
 
-    numbers = body[numbers_key]
-
+    numbers = list(body[numbers_key])
     message = command + options
 
     # create new drones if new have appeared, update existing drones
-    create_drones(numbers, message)
-    update_drones(numbers, hive_id)
+    create_drones(numbers, hive_id)
+    update_drones(numbers, message)
     send_messages(numbers, message)
+    return jsonify({'ya':'hoo!'})
 
 
 
