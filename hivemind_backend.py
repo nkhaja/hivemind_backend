@@ -179,8 +179,6 @@ def update_drones(numbers, message):
         drones.update_one({number_key: num}, {'$set':{last_request_key: message}})
 
 
-
-
 @app.route('/')
 def welcome():
     pass
@@ -311,4 +309,5 @@ def pull_request(hive_id=None):
 
 
 if __name__ == "__main__":
-    app.run()
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host = '0.0.0.0', port=port)
