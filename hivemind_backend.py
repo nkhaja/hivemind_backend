@@ -13,8 +13,7 @@ hives = db.hives
 drones = db.drones
 
 #security
-account_sid = "ACab39f4aed328c466f18ba9f003c65f94"
-auth_token = "5bdbe609ed7bcc9f053281b6ecff441d"
+
 
 
 # Twilio setup
