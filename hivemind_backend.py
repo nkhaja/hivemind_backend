@@ -46,13 +46,14 @@ expires_key = 'expires'
 text_key = 'text'
 numbers_key = 'numbers'
 
-## utility keys
+## auth keys
 auth_key = 'auth'
 id_key = '_id'
 
 # errors
 auth_error = {'error': 'Authentication failed'}
 
+# setup for jsonEncoding
 import json
 from bson import ObjectId
 
@@ -63,31 +64,7 @@ class JSONEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, o)
 
 
-# functions
-
-#TODO Finish working on authenticating; can we make this a decorator?
-'''
-Action:
-    Validates authorization by checking request headers
-
-Params:
-
-    headers -- The Request headers
-
-Returns:
-
-    BOOL based on whether or not authentication succeeded
-
-'''
-
-def authenticate(headers):
-    try:
-        token = headers[auth_key]
-        check_token = hives.find_one({id_key: ObjectId(token)})
-        return check_token is not None
-
-    except KeyError:
-        return False
+### functions
 
 '''
 Params:
@@ -104,20 +81,6 @@ def parse_options(options_data):
     option_string = '\n'.join(options_data)
     return option_string
 
-'''
-Params:
-
-numbers -- JSON array of phone numbers to message
-
-Returns:
-
-    a string array of the numbers
-
-'''
-# def parse_numbers(numbers_data):
-#     #Drone = [Number:Hive]
-#     drone = [:]
-#     for num in number_data:
 
 '''
 Sends given message to all numbers via twilio
@@ -126,17 +89,11 @@ Params:
 
     numbers -- an array of phone numbers
     message -- a string message to send to each number
-
-
 '''
-
 # TODO Ensure all numbers beging with '+'
+
 def send_messages(hive_id, message):
     all_drones = list(drones.find({hive_token_key:hive_id}))
-    drone = drones.find_one({hive_token_key:hive_id})
-    print(hive_id)
-    print(drone)
-    print(all_drones)
 
     for drone in all_drones:
         print(drone)
@@ -145,13 +102,25 @@ def send_messages(hive_id, message):
     	from_= '+14156609449',
     	body = message
         )
+'''
+Stores a drone document into the hive corresponding to given id.
 
+Params:
+    numbers - an array of phone numbers
+    hive_id - The string id of the hive we want to assign these numbers to
+
+Returns:
+    An array of drones (each represented as a dicts)
+
+'''
 def create_drones(numbers, hive_id):
 
     drones_created = []
     for num in numbers:
         if drones.find_one({number_key:num}) is None:
             drone = {}
+
+            # assign properties
             drone[number_key] = num
             drone[last_request_key] = 'empty'
             drone[last_response_key] = 'empty'
@@ -161,23 +130,36 @@ def create_drones(numbers, hive_id):
             drone_id = drones.insert_one(drone).inserted_id
             drone[id_key] = str(drone_id)
 
-            # get relevant hive and update its drones property
+            # get relevant hive and update it's drones property
             hives.update_one({id_key: ObjectId(hive_id)}, { '$addToSet':{drones_key:drone_id} })
             drones_created.append(drone)
 
         return drones_created
 
 
-# change the last_request of each drone to most recent message
+'''
+Changes the last_request of each drone to most recent message
+
+Params:
+    hive_id - The message will be sent to all drones in hive with this id
+    message - a string representing the message to be sent to all drones in hive
+'''
+
 def update_drones(hive_id, message):
     drones.update_many({hive_token_key: hive_id}, {'$set':{last_request_key: message}})
 
 
-@app.route('/')
-def welcome():
-    return jsonify({'greeting': 'This is hivemind'})
+'''
+Determines if specified params are missing, and returns of list of missing params
 
-# Ensures that all paremeters are there
+Params:
+    param_keys - a list of every parameter that needs to be present
+    args - a dictionary that we are checking for the desired param_keys
+
+Returns:
+    an array of any parameters that are missing
+'''
+
 def validate_params(param_keys, args):
     # find the missing keys
     print('entering validate_params')
@@ -185,17 +167,40 @@ def validate_params(param_keys, args):
     print(missing_params)
     return missing_params
 
-# Build an error response depending on the missing params
+'''
+Takes an array of params and returns an error message requesting them
+
+Params:
+    missing_params: a string list representing missing params
+
+Returns:
+    a jsonified error message specifying the parameters that are missing
+'''
+
 def make_error_response(missing_params):
     # format an error response
     param_string = ','.join(missing_params)
     error_message = {'error': 'You are missing the following parameters: %s' % param_string}
-    return jsonify(error_message)
+    error_message = jsonify(error_message)
+    error_message.status_code = 400
+    return error_message
+
+
+# ROUTES
+
+# TODO make a landing page for the app here
+@app.route('/')
+def welcome():
+    return jsonify({'greeting': 'This is hivemind'})
+
+
 
 # Get a token from the user
 # TODO: Check that the source is an iOS app
 # TODO: Set these tokens to expire after a period of time.
 
+# POST a hive name, responds with a hive object containing a token
+# token must be used to access hive functions on all other routes
 @app.route('/hives', methods = ['POST'])
 def get_token_for_hive():
 
@@ -207,64 +212,17 @@ def get_token_for_hive():
         hive_name = request.args.get(hive_name_key)
         date_created = request.args.get(date_created_key)
 
-
+        # Create a new hive object dictionary, store it
         hive_name_dict = {hive_name_key: hive_name, date_created_key: date_created, drones_key: []}
         hive_id = hives.insert_one(hive_name_dict).inserted_id
+
+        # convert the ObjectID mongo object to a string
         hive_name_dict[id_key] = str(hive_id)
 
-
         return jsonify(hive_name_dict)
-    else:
-        return jsonify({'error': 'This method is not supported'})
-
-'''
-Signal Structure:
-    * Command: Str
-        * options: [Str] -- list of numbered responses
-        * expiry: Str -- should be a date string
-
-Assume:
-    The following should be handled by the iOS app
-
-    * len(command) -- Less than 140 characters, including all options
-    * len(options) -- 0 to 3 max
-'''
 
 
-@app.route('/signals/<hive_id>', methods = ['POST'])
-def send_signal(hive_id=None):
-    # check for missing values
-    print(request.json)
-    missing_body = validate_params([command_key, options_key], request.json)
-
-    if missing_body or hive_id is None:
-        return make_error_response(missing_body + hive_token_key)
-    print('passed missing check')
-
-    # hive with id not found
-    hive = hives.find_one({id_key:ObjectId(hive_id)})
-    if not hive:
-        return jsonify({'error': 'not a valid hive id'})
-
-    print('checking params')
-    #assign desired values to vars
-    body = request.json
-    command = body[command_key]
-    options_data = list(body[soptions_key])
-    options = parse_options(options_data)
-
-    #TODO: Check that the string format of these numbers is okay
-
-
-    message = command + options
-
-    # create new drones if new have appeared, update existing drones
-    update_drones(hive_id, message)
-    send_messages(hive_id, message)
-    print('about to return')
-    return jsonify({'ya':'hoo!'})
-
-
+# receives a list of numbers and adds them as drones to the hive with hive_id
 @app.route('/drones/<hive_id>', methods = ['POST'])
 def build_drones(hive_id=None):
 
@@ -285,6 +243,48 @@ def build_drones(hive_id=None):
 
     return jsonify({'drones':drones_created})
 
+'''
+Signal Structure:
+    * Command: Str
+        * options: [Str] -- list of numbered responses
+        * expiry: Str -- should be a date string
+
+Assume:
+    The following should be handled by the iOS app
+
+    * len(command) -- Less than 140 characters, including all options
+    * len(options) -- 1 to 3
+'''
+
+# A message sent to this endpoint is relayed to all drones in the hive with given id
+@app.route('/signals/<hive_id>', methods = ['POST'])
+def send_signal(hive_id=None):
+
+    missing_body = validate_params([command_key, options_key], request.json)
+    if missing_body or hive_id is None:
+        return make_error_response(missing_body + hive_token_key)
+
+    # hive with id not found
+    hive = hives.find_one({id_key:ObjectId(hive_id)})
+    if not hive:
+        return jsonify({'error': 'not a valid hive id'})
+
+    #assign desired values to vars
+    body = request.json
+    command = body[command_key]
+    options_data = list(body[soptions_key])
+    options = parse_options(options_data)
+
+    #TODO: Check that the string format of these numbers is okay
+
+    message = command + options
+
+    # create new drones if new have appeared, update existing drones
+    update_drones(hive_id, message)
+    send_messages(hive_id, message)
+
+    return jsonify({'message_sent':'message'})
+
 
 
 
@@ -302,53 +302,50 @@ def relay_response():
     reply = json[reply_key]
     account_sid_from_twilio = json[account_sid_key]
 
+    # Account sid mismatch
     if not account_sid_from_twilio == account_sid:
         print('accountSID mismatch')
-        return jsonify({'error': 'this accountSid does not match'})
+        resp = jsonify({'error': 'this accountSid does not match'})
+        resp.status_code = 400
+        return resp
+
+
 
     #TODO: check that the drones exists before you update it.
         # however drone should technically exist if its hitting this endpoint
-
-    print('looking for drone')
     drone = drones.find_one({number_key:from_num})
-
     if not drone:
         print('drone with number %s does not belong to any hives') % from_num
         resp = jsonify({'error': 'this drone does not belong to a hive'})
         resp.status_code = 400
         return resp
 
-
+    #update the last_response field of drones with response sent here
     drones.update_one({number_key: from_num}, { '$set':{last_response_key:reply}})
-    print(from_num)
     return jsonify({'message': 'thanks twilio!'})
 
-
+# GET a json of hive with hive_id, contains all drones and their responses
 @app.route('/hives/<hive_id>', methods = ['GET'])
 def pull_request(hive_id=None):
 
     # hive_id not provided
-    print('checking the hive id')
     if not hive_id:
         resp = jsonify({'error': 'this route requires a valid hive_id'})
         resp.status_code = 400
         return resp
 
 
-    print('finding the hive')
     hive = hives.find_one({id_key:ObjectId(hive_id)})
     # hive with id not found
     if not hive:
         return jsonify({'error': 'not a valid hive id'})
 
-    print('about to encode hive')
+    # encode to remove any Mongo ObjectID's
     hive = JSONEncoder().encode(hive)
-    print('assigning hive id')
+
     # return the desired hive info
     return jsonify(hive)
 
 
 if __name__ == "__main__":
-    # port = int(os.environ.get('PORT', 5000))
-    # app.run(host = '0.0.0.0', port=port)
     app.run()
