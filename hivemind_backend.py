@@ -186,13 +186,34 @@ def make_error_response(missing_params):
     return error_message
 
 
+def delete_hive(hive_id):
+    drones.remove({hive_token_key:hive_id})
+    hives.remove({hive_token_key:hive_id})
+
+def delete_drones(hive_id, numbers):
+    for num in numbers:
+        #check that this hive has the drone
+        find_drone_query = {number_key:num, hive_token_key: hive_id}
+        drone = drones.find_one(find_drone_query)
+
+        if drone is not None:
+
+            #build query for this drone
+            drone_object_id = drone[id_key]
+            hive_query = {hive_token_key:hive_id}
+            drone_query = { drones_key: {id_key: drone_object_id} }
+
+            # pull the drone out of this hive
+            hives.update_one( hive_query, {'$pull': drone_query})
+            drones.remove({find_drone_query})
+
+
 # ROUTES
 
 # TODO make a landing page for the app here
 @app.route('/')
 def welcome():
     return jsonify({'greeting': 'This is hivemind'})
-
 
 
 # Get a token from the user
@@ -223,7 +244,7 @@ def get_token_for_hive():
 
 
 # receives a list of numbers and adds them as drones to the hive with hive_id
-@app.route('/drones/<hive_id>', methods = ['POST'])
+@app.route('/drones/<hive_id>', methods = ['POST', 'DELETE'])
 def build_drones(hive_id=None):
 
     missing_body = validate_params([numbers_key], request.json)
@@ -233,15 +254,21 @@ def build_drones(hive_id=None):
     # hive with id not found
     hive = hives.find_one({id_key:ObjectId(hive_id)})
     if not hive:
-        missing_params = jsonify({'error': 'not a valid hive id'})
-        missing_params.status_code = 400
-        return missing_params
+        missing_id = jsonify({'error': 'not a valid hive id'})
+        missing_id.status_code = 400
+        return missing_id
 
-    # create a list of numbers from response body
-    numbers = list(request.json[numbers_key])
-    drones_created = create_drones(numbers, hive_id)
+    if method == 'POST':
+        # create a list of numbers from response body
+        numbers = list(request.json[numbers_key])
+        drones_created = create_drones(numbers, hive_id)
 
-    return jsonify({'drones':drones_created})
+        return jsonify({'drones':drones_created})
+
+
+    elif method == 'DELETE':
+        delete_drones(hive_id, numbers)
+
 
 '''
 Signal Structure:
@@ -325,15 +352,15 @@ def relay_response():
     return jsonify({'message': 'thanks twilio!'})
 
 # GET a json of hive with hive_id, contains all drones and their responses
-@app.route('/hives/<hive_id>', methods = ['GET'])
+@app.route('/hives/<hive_id>', methods = ['GET', 'DELETE'])
 def pull_request(hive_id=None):
+
 
     # hive_id not provided
     if not hive_id:
         resp = jsonify({'error': 'this route requires a valid hive_id'})
         resp.status_code = 400
         return resp
-
 
     hive = hives.find_one({id_key:ObjectId(hive_id)})
     # hive with id not found
@@ -344,6 +371,10 @@ def pull_request(hive_id=None):
     hive = JSONEncoder().encode(hive)
 
     # return the desired hive info
+
+    if method == 'DELETE':
+        delete_hive(hive_id)
+
     return jsonify(hive)
 
 
