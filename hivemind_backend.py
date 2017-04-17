@@ -1,24 +1,25 @@
 from flask import Flask, request, jsonify, json
-from flask_pymongo import PyMongo
+# from flask_pymongo import PyMongo
 from pymongo import MongoClient
 from bson import ObjectId
 from bson import json_util
 from twilio.rest import Client
 
 # DB setup
-client = MongoClient()
-db = client.database
+
+mongo_uri = 'mongodb://<>:<>@ds161890.mlab.com:61890/hivemind'
+client = MongoClient(mongo_uri, connect=True)
+db = client.get_default_database()
 
 hives = db.hives
 drones = db.drones
 
 #security
-
-
+account_sid = "SECRET"
+auth_token = "SO_SECRET"
 
 # Twilio setup
 client = Client(account_sid, auth_token)
-
 
 # initiate app
 app = Flask(__name__)
@@ -51,7 +52,6 @@ auth_key = 'auth'
 id_key = '_id'
 
 # errors
-
 auth_error = {'error': 'Authentication failed'}
 
 def param_error(missing_params):
@@ -140,7 +140,6 @@ Params:
 # TODO Ensure all numbers beging with '+'
 def send_messages(numbers, message):
 
-    # TODO: Does this function send the messages or just prep them?
     for num in numbers:
 
         message = client.api.account.messages.create(
@@ -181,7 +180,7 @@ def update_drones(numbers, message):
 
 @app.route('/')
 def welcome():
-    pass
+    return jsonify({'greeting': 'This is hivemind'})
 
 def validate_params(param_keys, args):
     # find the missing keys
@@ -211,7 +210,6 @@ def get_token_for_hive():
 
 
         hive_name_dict = {hive_name_key: hive_name, date_created_key: date_created, drones_key: []}
-
         hive_id = hives.insert_one(hive_name_dict).inserted_id
         hive_name_dict[id_key] = str(hive_id)
 
@@ -234,17 +232,23 @@ Assume:
     * len(options) -- 0 to 3 max
 '''
 
-#TODO: Authentication on this route
 @app.route('/signals', methods = ['POST'])
 def send_signal():
 
-    print(request.json)
-    print(request.data)
+
     # check for missing values
     missing_body = validate_params([command_key, options_key], request.json)
     missing_params = validate_params([hive_token_key], request.args)
     if missing_body or missing_params:
         return make_error_response(missing_body + missing_params)
+
+    # make sure this person has a valid id
+    hive = hives.find_one({id_key:ObjectId(hive_id)})
+    # hive with id not found
+    if not hive:
+        return jsonify({'error': 'not a valid hive id'})
+
+
 
     #assign desired values to vars
     body = request.json
@@ -268,7 +272,7 @@ def send_signal():
 
 
 # Relay the messages that come from Twilio here
-@app.route('/relay')
+@app.route('/relay', methods = ['POST'])
 def relay_response():
     # if not authenticate(request.headers):
     #     return auth_error
@@ -291,7 +295,7 @@ def relay_response():
     drones.update_one({'number_key': from_num}, { '$set':{last_response_key:body}})
 
 
-@app.route('/hives/<hive_id>')
+@app.route('/hives/<hive_id>', methods = ['GET'])
 def pull_request(hive_id=None):
 
     # hive_id not provided
@@ -307,7 +311,7 @@ def pull_request(hive_id=None):
     return jsonify(hive)
 
 
-
 if __name__ == "__main__":
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host = '0.0.0.0', port=port)
+    # port = int(os.environ.get('PORT', 5000))
+    # app.run(host = '0.0.0.0', port=port)
+    app.run()
