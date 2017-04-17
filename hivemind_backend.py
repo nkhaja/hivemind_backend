@@ -6,7 +6,6 @@ from bson import json_util
 from twilio.rest import Client
 
 # DB setup
-
 mongo_uri = 'mongodb://<>:<>@ds161890.mlab.com:61890/hivemind'
 client = MongoClient(mongo_uri, connect=True)
 db = client.get_default_database()
@@ -25,7 +24,7 @@ client = Client(account_sid, auth_token)
 app = Flask(__name__)
 
 # twilio response constants
-body_key = 'body'
+reply_key = 'Body'
 account_sid_key = 'AccountSid'
 from_key = 'From'
 
@@ -53,12 +52,6 @@ id_key = '_id'
 
 # errors
 auth_error = {'error': 'Authentication failed'}
-
-def param_error(missing_params):
-    param_string = ','.join(missing_params)
-    error_message = {'error':'You are missing the following parameters: %s' } % param_string
-    return jsonify(error_message)
-
 
 import json
 from bson import ObjectId
@@ -138,55 +131,61 @@ Params:
 '''
 
 # TODO Ensure all numbers beging with '+'
-def send_messages(numbers, message):
+def send_messages(hive_id, message):
+    all_drones = list(drones.find({hive_token_key:hive_id}))
+    drone = drones.find_one({hive_token_key:hive_id})
+    print(hive_id)
+    print(drone)
+    print(all_drones)
 
-    for num in numbers:
-
+    for drone in all_drones:
+        print(drone)
         message = client.api.account.messages.create(
-    	to = num,
+    	to = drone[number_key],
     	from_= '+14156609449',
     	body = message
         )
 
 def create_drones(numbers, hive_id):
-    drones.drop()
-    print(len(numbers))
+
+    drones_created = []
     for num in numbers:
         if drones.find_one({number_key:num}) is None:
             drone = {}
-            drone[numbers_key] = num
+            drone[number_key] = num
             drone[last_request_key] = 'empty'
             drone[last_response_key] = 'empty'
             drone[hive_token_key] = hive_id
 
-            print('checkpoint A')
-
             # insert the drone and get its id
             drone_id = drones.insert_one(drone).inserted_id
-
-            print('checkpoint B')
+            drone[id_key] = str(drone_id)
 
             # get relevant hive and update its drones property
             hives.update_one({id_key: ObjectId(hive_id)}, { '$addToSet':{drones_key:drone_id} })
+            drones_created.append(drone)
 
-            print('checkpoint C')
+        return drones_created
 
 
 # change the last_request of each drone to most recent message
-def update_drones(numbers, message):
-    for num in numbers:
-        drones.update_one({number_key: num}, {'$set':{last_request_key: message}})
+def update_drones(hive_id, message):
+    drones.update_many({hive_token_key: hive_id}, {'$set':{last_request_key: message}})
 
 
 @app.route('/')
 def welcome():
     return jsonify({'greeting': 'This is hivemind'})
 
+# Ensures that all paremeters are there
 def validate_params(param_keys, args):
     # find the missing keys
+    print('entering validate_params')
     missing_params = [key for key in param_keys if key not in args]
+    print(missing_params)
     return missing_params
 
+# Build an error response depending on the missing params
 def make_error_response(missing_params):
     # format an error response
     param_string = ','.join(missing_params)
@@ -213,7 +212,6 @@ def get_token_for_hive():
         hive_id = hives.insert_one(hive_name_dict).inserted_id
         hive_name_dict[id_key] = str(hive_id)
 
-        # add the token to the dict if accepted
 
         return jsonify(hive_name_dict)
     else:
@@ -232,41 +230,60 @@ Assume:
     * len(options) -- 0 to 3 max
 '''
 
-@app.route('/signals', methods = ['POST'])
-def send_signal():
 
-
+@app.route('/signals/<hive_id>', methods = ['POST'])
+def send_signal(hive_id=None):
     # check for missing values
+    print(request.json)
     missing_body = validate_params([command_key, options_key], request.json)
-    missing_params = validate_params([hive_token_key], request.args)
-    if missing_body or missing_params:
-        return make_error_response(missing_body + missing_params)
 
-    # make sure this person has a valid id
-    hive = hives.find_one({id_key:ObjectId(hive_id)})
+    if missing_body or hive_id is None:
+        return make_error_response(missing_body + hive_token_key)
+    print('passed missing check')
+
     # hive with id not found
+    hive = hives.find_one({id_key:ObjectId(hive_id)})
     if not hive:
         return jsonify({'error': 'not a valid hive id'})
 
-
-
+    print('checking params')
     #assign desired values to vars
     body = request.json
     command = body[command_key]
-    options_data = list(body[options_key])
+    options_data = list(body[soptions_key])
     options = parse_options(options_data)
-    hive_id = request.args.get(hive_token_key)
 
     #TODO: Check that the string format of these numbers is okay
 
-    numbers = list(body[numbers_key])
+
     message = command + options
 
     # create new drones if new have appeared, update existing drones
-    create_drones(numbers, hive_id)
-    update_drones(numbers, message)
-    send_messages(numbers, message)
+    update_drones(hive_id, message)
+    send_messages(hive_id, message)
+    print('about to return')
     return jsonify({'ya':'hoo!'})
+
+
+@app.route('/drones/<hive_id>', methods = ['POST'])
+def build_drones(hive_id=None):
+
+    missing_body = validate_params([numbers_key], request.json)
+    if missing_body or hive_id is None:
+        return make_error_response(missing_body + hive_token_key)
+
+    # hive with id not found
+    hive = hives.find_one({id_key:ObjectId(hive_id)})
+    if not hive:
+        missing_params = jsonify({'error': 'not a valid hive id'})
+        missing_params.status_code = 400
+        return missing_params
+
+    # create a list of numbers from response body
+    numbers = list(request.json[numbers_key])
+    drones_created = create_drones(numbers, hive_id)
+
+    return jsonify({'drones':drones_created})
 
 
 
@@ -274,39 +291,59 @@ def send_signal():
 # Relay the messages that come from Twilio here
 @app.route('/relay', methods = ['POST'])
 def relay_response():
-    # if not authenticate(request.headers):
-    #     return auth_error
 
-    # get the desired params from the twilio response
-    missing = validate_params([from_key, body_key, account_sid_key], request.args)
+    json = request.form.to_dict()
+    missing = validate_params([from_key, reply_key, account_sid_key], json)
     if missing:
         return make_error_response(missing)
 
     # get the desired params out of message
-    from_num = request.args.get(from_key)
-    body = request.args.get(body_key)
-    account_sid_from_twilio = request.args.get(account_sid_key)
+    from_num = json[from_key]
+    reply = json[reply_key]
+    account_sid_from_twilio = json[account_sid_key]
 
     if not account_sid_from_twilio == account_sid:
+        print('accountSID mismatch')
         return jsonify({'error': 'this accountSid does not match'})
 
     #TODO: check that the drones exists before you update it.
-        # however this should exist if its hitting this endpoint
-    drones.update_one({'number_key': from_num}, { '$set':{last_response_key:body}})
+        # however drone should technically exist if its hitting this endpoint
+
+    print('looking for drone')
+    drone = drones.find_one({number_key:from_num})
+
+    if not drone:
+        print('drone with number %s does not belong to any hives') % from_num
+        resp = jsonify({'error': 'this drone does not belong to a hive'})
+        resp.status_code = 400
+        return resp
+
+
+    drones.update_one({number_key: from_num}, { '$set':{last_response_key:reply}})
+    print(from_num)
+    return jsonify({'message': 'thanks twilio!'})
 
 
 @app.route('/hives/<hive_id>', methods = ['GET'])
 def pull_request(hive_id=None):
 
     # hive_id not provided
+    print('checking the hive id')
     if not hive_id:
-        return jsonify({'error': 'this route requires a valid hive_id'})
+        resp = jsonify({'error': 'this route requires a valid hive_id'})
+        resp.status_code = 400
+        return resp
 
+
+    print('finding the hive')
     hive = hives.find_one({id_key:ObjectId(hive_id)})
     # hive with id not found
     if not hive:
         return jsonify({'error': 'not a valid hive id'})
 
+    print('about to encode hive')
+    hive = JSONEncoder().encode(hive)
+    print('assigning hive id')
     # return the desired hive info
     return jsonify(hive)
 
