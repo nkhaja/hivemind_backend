@@ -5,6 +5,8 @@ from bson import ObjectId
 from bson import json_util
 from twilio.rest import Client
 
+#TODO: Change documentation to official python documentation
+
 # DB setup
 mongo_uri = 'mongodb://<>:<>@ds161890.mlab.com:61890/hivemind'
 client = MongoClient(mongo_uri, connect=True)
@@ -16,6 +18,7 @@ drones = db.drones
 #security
 account_sid = "SECRET"
 auth_token = "SO_SECRET"
+
 
 # Twilio setup
 client = Client(account_sid, auth_token)
@@ -50,13 +53,12 @@ numbers_key = 'numbers'
 auth_key = 'auth'
 id_key = '_id'
 
-# errors
-auth_error = {'error': 'Authentication failed'}
 
 # setup for jsonEncoding
 import json
 from bson import ObjectId
 
+#TODO: Add to another file
 class JSONEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, ObjectId):
@@ -89,11 +91,12 @@ Params:
 
     numbers -- an array of phone numbers
     message -- a string message to send to each number
+
 '''
 # TODO Ensure all numbers beging with '+'
-
+# TODO Put the phone number into constant
 def send_messages(hive_id, message):
-    all_drones = list(drones.find({hive_token_key:hive_id}))
+    all_drones = list(drones.find({hive_token_key: hive_id}))
 
     for drone in all_drones:
         print(drone)
@@ -117,7 +120,7 @@ def create_drones(numbers, hive_id):
 
     drones_created = []
     for num in numbers:
-        if drones.find_one({number_key:num}) is None:
+        if drones.find_one({number_key: num}) is None:
             drone = {}
 
             # assign properties
@@ -131,7 +134,7 @@ def create_drones(numbers, hive_id):
             drone[id_key] = str(drone_id)
 
             # get relevant hive and update it's drones property
-            hives.update_one({id_key: ObjectId(hive_id)}, { '$addToSet':{drones_key:drone_id} })
+            hives.update_one({id_key: ObjectId(hive_id)}, { '$addToSet': {drones_key: drone_id} })
             drones_created.append(drone)
 
         return drones_created
@@ -146,7 +149,7 @@ Params:
 '''
 
 def update_drones(hive_id, message):
-    drones.update_many({hive_token_key: hive_id}, {'$set':{last_request_key: message}})
+    drones.update_many({hive_token_key: hive_id}, {'$set': {last_request_key: message}})
 
 
 '''
@@ -162,9 +165,7 @@ Returns:
 
 def validate_params(param_keys, args):
     # find the missing keys
-    print('entering validate_params')
     missing_params = [key for key in param_keys if key not in args]
-    print(missing_params)
     return missing_params
 
 '''
@@ -187,20 +188,21 @@ def make_error_response(missing_params):
 
 
 def delete_hive(hive_id):
-    drones.remove({hive_token_key:hive_id})
-    hives.remove({hive_token_key:hive_id})
+    drones.remove({hive_token_key: hive_id})
+    hives.remove({hive_token_key: hive_id})
 
-def delete_drones(hive_id, numbers):
+def delete_drones_by_number(hive_id, numbers):
+    hive_query = {hive_token_key: hive_id}
+
     for num in numbers:
         #check that this hive has the drone
-        find_drone_query = {number_key:num, hive_token_key: hive_id}
+        find_drone_query = {number_key: num, hive_token_key: hive_id}
         drone = drones.find_one(find_drone_query)
 
         if drone is not None:
 
             #build query for this drone
             drone_object_id = drone[id_key]
-            hive_query = {hive_token_key:hive_id}
             drone_query = { drones_key: {id_key: drone_object_id} }
 
             # pull the drone out of this hive
@@ -234,7 +236,12 @@ def get_token_for_hive():
         date_created = request.args.get(date_created_key)
 
         # Create a new hive object dictionary, store it
-        hive_name_dict = {hive_name_key: hive_name, date_created_key: date_created, drones_key: []}
+        hive_name_dict = {
+            hive_name_key: hive_name,
+            date_created_key: date_created,
+            drones_key: []
+        }
+
         hive_id = hives.insert_one(hive_name_dict).inserted_id
 
         # convert the ObjectID mongo object to a string
@@ -252,22 +259,22 @@ def build_drones(hive_id=None):
         return make_error_response(missing_body + hive_token_key)
 
     # hive with id not found
-    hive = hives.find_one({id_key:ObjectId(hive_id)})
-    if not hive:
+    hive = hives.find_one({id_key: ObjectId(hive_id)})
+    if hive is None:
         missing_id = jsonify({'error': 'not a valid hive id'})
         missing_id.status_code = 400
         return missing_id
 
-    if method == 'POST':
+    if request.method == 'POST':
         # create a list of numbers from response body
         numbers = list(request.json[numbers_key])
         drones_created = create_drones(numbers, hive_id)
 
-        return jsonify({'drones':drones_created})
+        return jsonify({'drones': drones_created})
 
 
-    elif method == 'DELETE':
-        delete_drones(hive_id, numbers)
+    elif request.method == 'DELETE':
+        delete_drones_by_number(hive_id, numbers)
 
 
 '''
@@ -292,7 +299,7 @@ def send_signal(hive_id=None):
         return make_error_response(missing_body + hive_token_key)
 
     # hive with id not found
-    hive = hives.find_one({id_key:ObjectId(hive_id)})
+    hive = hives.find_one({id_key: ObjectId(hive_id)})
     if not hive:
         return jsonify({'error': 'not a valid hive id'})
 
@@ -310,7 +317,7 @@ def send_signal(hive_id=None):
     update_drones(hive_id, message)
     send_messages(hive_id, message)
 
-    return jsonify({'message_sent':'message'})
+    return jsonify({'message_sent': message})
 
 
 
@@ -340,7 +347,7 @@ def relay_response():
 
     #TODO: check that the drones exists before you update it.
         # however drone should technically exist if its hitting this endpoint
-    drone = drones.find_one({number_key:from_num})
+    drone = drones.find_one({number_key: from_num})
     if not drone:
         print('drone with number %s does not belong to any hives') % from_num
         resp = jsonify({'error': 'this drone does not belong to a hive'})
@@ -348,13 +355,14 @@ def relay_response():
         return resp
 
     #update the last_response field of drones with response sent here
-    drones.update_one({number_key: from_num}, { '$set':{last_response_key:reply}})
+    drones.update_one({number_key: from_num}, { '$set': {last_response_key: reply}})
+
     return jsonify({'message': 'thanks twilio!'})
+
 
 # GET a json of hive with hive_id, contains all drones and their responses
 @app.route('/hives/<hive_id>', methods = ['GET', 'DELETE'])
 def pull_request(hive_id=None):
-
 
     # hive_id not provided
     if not hive_id:
@@ -362,21 +370,19 @@ def pull_request(hive_id=None):
         resp.status_code = 400
         return resp
 
-    hive = hives.find_one({id_key:ObjectId(hive_id)})
+    hive = hives.find_one({id_key: ObjectId(hive_id)})
     # hive with id not found
     if not hive:
-        return jsonify({'error': 'not a valid hive id'})
+        return jsonify({'error': 'not a valid hive id: {}'.format(hive_id)})
 
-    # encode to remove any Mongo ObjectID's
-    hive = JSONEncoder().encode(hive)
-
-    # return the desired hive info
-
-    if method == 'DELETE':
+    if request.method == 'DELETE':
         delete_hive(hive_id)
 
-    return jsonify(hive)
+    # encode to remove any Mongo ObjectID's
+    hive_string = JSONEncoder().encode(hive)
+
+    return hive_string
 
 
 if __name__ == "__main__":
-    app.run()
+    app.run(debug=True)
