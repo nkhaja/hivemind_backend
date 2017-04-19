@@ -306,7 +306,7 @@ def send_signal(hive_id=None):
     #assign desired values to vars
     body = request.json
     command = body[command_key]
-    options_data = list(body[soptions_key])
+    options_data = list(body[options_key])
     options = parse_options(options_data)
 
     #TODO: Check that the string format of these numbers is okay
