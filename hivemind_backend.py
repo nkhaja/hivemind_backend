@@ -8,7 +8,7 @@ from twilio.rest import Client
 #TODO: Change documentation to official python documentation
 
 # DB setup
-mongo_uri = 'mongodb://admin:password@ds161890.mlab.com:61890/hivemind'
+mongo_uri = 'mongodb://<>:<>@ds161890.mlab.com:61890/hivemind'
 client = MongoClient(mongo_uri, connect=True)
 db = client.get_default_database()
 
@@ -16,9 +16,8 @@ hives = db.hives
 drones = db.drones
 
 #security
-account_sid = "ACab39f4aed328c466f18ba9f003c65f94"
-auth_token = "5bdbe609ed7bcc9f053281b6ecff441d"
-
+account_sid = "SECRET"
+auth_token = "SO_SECRET"
 
 
 # Twilio setup
@@ -215,6 +214,7 @@ def delete_drones_by_number(hive_id, numbers):
 
     return drones_deleted
 
+
 # ROUTES
 
 # TODO make a landing page for the app here
@@ -237,8 +237,8 @@ def get_token_for_hive():
         if missing:
             return make_error_response(missing)
 
-        hive_name = request.json.get(hive_name_key)
-        date_created = request.json.get(date_created_key)
+        hive_name = request.args.get(hive_name_key)
+        date_created = request.args.get(date_created_key)
 
         # Create a new hive object dictionary, store it
         hive_name_dict = {
