@@ -381,12 +381,21 @@ def pull_request(hive_id=None):
         return resp
 
     hive = hives.find_one({id_key: ObjectId(hive_id)})
+    
     # hive with id not found
     if not hive:
         return jsonify({'error': 'not a valid hive id: {}'.format(hive_id)})
 
+    drones_for_hive = []
+    for drone_id in hive[drones_key]:
+        drone = find_one{id_key: ObjectId(drone_id)}
+        drones_for_hive.append(drone)
+
     if request.method == 'DELETE':
         delete_hive(hive_id)
+
+    # put the drone into the hive
+    hive[drones_key] = drones_for_hive
 
     # encode to remove any Mongo ObjectID's
     hive_string = JSONEncoder().encode(hive)
