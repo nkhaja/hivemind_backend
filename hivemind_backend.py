@@ -233,12 +233,12 @@ def welcome():
 def get_token_for_hive():
 
     if request.method == 'POST':
-        missing = validate_params([hive_name_key, date_created_key], request.args)
+        missing = validate_params([hive_name_key, date_created_key], request.json)
         if missing:
             return make_error_response(missing)
 
-        hive_name = request.args.get(hive_name_key)
-        date_created = request.args.get(date_created_key)
+        hive_name = request.json.get(hive_name_key)
+        date_created = request.json.get(date_created_key)
 
         # Create a new hive object dictionary, store it
         hive_name_dict = {
