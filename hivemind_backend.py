@@ -194,6 +194,8 @@ def delete_hive(hive_id):
 def delete_drones_by_number(hive_id, numbers):
     hive_query = {hive_token_key: hive_id}
 
+    drones_deleted = []
+
     for num in numbers:
         #check that this hive has the drone
         find_drone_query = {number_key: num, hive_token_key: hive_id}
@@ -208,6 +210,9 @@ def delete_drones_by_number(hive_id, numbers):
             # pull the drone out of this hive
             hives.update_one( hive_query, {'$pull': drone_query})
             drones.remove({find_drone_query})
+            drones_deleted.append(drone)
+
+    return drones_deleted
 
 
 # ROUTES
@@ -274,7 +279,8 @@ def build_drones(hive_id=None):
 
 
     elif request.method == 'DELETE':
-        delete_drones_by_number(hive_id, numbers)
+        drones_deleted = delete_drones_by_number(hive_id, numbers)
+        return jsonify(drones_deleted)
 
 
 '''
