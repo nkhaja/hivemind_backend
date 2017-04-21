@@ -4,6 +4,7 @@ from pymongo import MongoClient
 from bson import ObjectId
 from bson import json_util
 from twilio.rest import Client
+import re
 
 #TODO: Change documentation to official python documentation
 
@@ -18,6 +19,7 @@ drones = db.drones
 #security
 account_sid = "SECRET"
 auth_token = "SO_SECRET"
+
 
 
 # Twilio setup
@@ -51,7 +53,7 @@ numbers_key = 'numbers'
 
 ## auth keys
 auth_key = 'auth'
-id_key = 'id'
+id_key = '_id'
 
 
 # setup for jsonEncoding
@@ -119,7 +121,10 @@ Returns:
 def create_drones(numbers, hive_id):
 
     drones_created = []
+    regex = re.compile('-| |\\(|\\)')
+
     for num in numbers:
+        num = regex.sub('', num)
         if drones.find_one({number_key: num}) is None:
             drone = {}
 
@@ -213,7 +218,6 @@ def delete_drones_by_number(hive_id, numbers):
             drones_deleted.append(drone)
 
     return drones_deleted
-
 
 # ROUTES
 
