@@ -280,7 +280,7 @@ def build_drones(hive_id=None):
 
     elif request.method == 'DELETE':
         drones_deleted = delete_drones_by_number(hive_id, numbers)
-        return jsonify(drones_deleted)
+        return JSONEncoder().encode(drones_deleted)
 
 
 '''
