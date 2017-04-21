@@ -233,7 +233,7 @@ def welcome():
 def get_token_for_hive():
 
     if request.method == 'POST':
-        missing = validate_params([hive_name_key, date_created_key], request.args)
+        missing = validate_params([hive_name_key, date_created_key], request.json)
         if missing:
             return make_error_response(missing)
 
