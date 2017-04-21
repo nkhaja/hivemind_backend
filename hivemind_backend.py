@@ -388,7 +388,7 @@ def pull_request(hive_id=None):
 
     drones_for_hive = []
     for drone_id in hive[drones_key]:
-        drone = find_one({id_key: ObjectId(drone_id)})
+        drone = drones.find_one({id_key: ObjectId(drone_id)})
         drones_for_hive.append(drone)
 
     if request.method == 'DELETE':
