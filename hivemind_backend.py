@@ -51,7 +51,7 @@ numbers_key = 'numbers'
 
 ## auth keys
 auth_key = 'auth'
-id_key = '_id'
+id_key = 'id'
 
 
 # setup for jsonEncoding
@@ -137,7 +137,7 @@ def create_drones(numbers, hive_id):
             hives.update_one({id_key: ObjectId(hive_id)}, { '$addToSet': {drones_key: drone_id} })
             drones_created.append(drone)
 
-        return drones_created
+    return drones_created
 
 
 '''
