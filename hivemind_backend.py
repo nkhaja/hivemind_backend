@@ -82,6 +82,10 @@ Returns:
 '''
 
 def parse_options(options_data):
+    # enumerate the options
+    for i in range(len(options_data)):
+        options_data[i] = str(i + 1)+'.'+option
+
     option_string = '\n'.join(options_data)
     return option_string
 
@@ -100,13 +104,16 @@ Params:
 def send_messages(hive_id, message):
     all_drones = list(drones.find({hive_token_key: hive_id}))
 
+    print('going to check the drones')
+    print(all_drones)
+    numbers_messaged = []
     for drone in all_drones:
-        print(drone)
-        message = client.api.account.messages.create(
+        client.api.account.messages.create(
     	to = drone[number_key],
     	from_= '+14156609449',
     	body = message
         )
+        print('a message has been sent')
 '''
 Stores a drone document into the hive corresponding to given id.
 
@@ -120,12 +127,16 @@ Returns:
 '''
 def create_drones(numbers, hive_id):
 
+    #TODO: Update the regex to cut off +1
     drones_created = []
     regex = re.compile('-| |\\(|\\)')
-
+    print('all_numbers')
+    print(numbers)
     for num in numbers:
-        num = regex.sub('', num)
-        if drones.find_one({number_key: num}) is None:
+        num = regex.sub('', num).replace(u'\xa0', u' ').replace(' ', '')
+        print(num)
+
+        if drones.find_one({hive_token_key: hive_id, number_key: num }) is None:
             drone = {}
 
             # assign properties
@@ -141,6 +152,7 @@ def create_drones(numbers, hive_id):
             # get relevant hive and update it's drones property
             hives.update_one({id_key: ObjectId(hive_id)}, { '$addToSet': {drones_key: drone_id} })
             drones_created.append(drone)
+            print('added the following drone')
 
     return drones_created
 
@@ -241,8 +253,11 @@ def get_token_for_hive():
         if missing:
             return make_error_response(missing)
 
-        hive_name = request.args.get(hive_name_key)
-        date_created = request.args.get(date_created_key)
+        hive_name = request.json.get(hive_name_key)
+        date_created = request.json.get(date_created_key)
+
+        print(hive_name)
+        print(request.json[hive_name_key])
 
         # Create a new hive object dictionary, store it
         hive_name_dict = {
@@ -304,15 +319,19 @@ Assume:
 @app.route('/signals/<hive_id>', methods = ['POST'])
 def send_signal(hive_id=None):
 
+    print('hitting the top')
     missing_body = validate_params([command_key, options_key], request.json)
     if missing_body or hive_id is None:
         return make_error_response(missing_body + hive_token_key)
+
+    print('made sure nothing was missing')
 
     # hive with id not found
     hive = hives.find_one({id_key: ObjectId(hive_id)})
     if not hive:
         return jsonify({'error': 'not a valid hive id'})
 
+    print('was able to find the hive')
     #assign desired values to vars
     body = request.json
     command = body[command_key]
@@ -321,12 +340,15 @@ def send_signal(hive_id=None):
 
     #TODO: Check that the string format of these numbers is okay
 
-    message = command + options
+    message = command +'\n'+ options
 
     # create new drones if new have appeared, update existing drones
+    print('updating the drones')
     update_drones(hive_id, message)
+    print('get ready to send the message!')
     send_messages(hive_id, message)
 
+    print(message)
     return jsonify({'message_sent': message})
 
 
@@ -343,6 +365,7 @@ def relay_response():
 
     # get the desired params out of message
     from_num = json[from_key]
+    from_num = from_num[-10:]
     reply = json[reply_key]
     account_sid_from_twilio = json[account_sid_key]
 
@@ -353,10 +376,10 @@ def relay_response():
         resp.status_code = 400
         return resp
 
-
-
     #TODO: check that the drones exists before you update it.
         # however drone should technically exist if its hitting this endpoint
+
+    # Make sure desired drone exists
     drone = drones.find_one({number_key: from_num})
     if not drone:
         print('drone with number %s does not belong to any hives') % from_num
@@ -364,11 +387,23 @@ def relay_response():
         resp.status_code = 400
         return resp
 
+    #TODO error handle single digits greater than 3
+    if len(reply) < 2 and reply.isdigit():
+        print('good reply')
+        drones.update({number_key: from_num},
+                      { '$set': {last_response_key: reply}},
+                        multi = True)
+    else:
+        print('bad reply')
+        message = 'Please respond with a single digit corresponding to one of the options given'
+        client.api.account.messages.create(
+    	to = from_num,
+    	from_= '+14156609449',
+    	body = message
+        )
+
     #update the last_response field of drones with response sent here
-    drones.update_one({number_key: from_num}, { '$set': {last_response_key: reply}})
-
     return jsonify({'message': 'thanks twilio!'})
-
 
 # GET a json of hive with hive_id, contains all drones and their responses
 @app.route('/hives/<hive_id>', methods = ['GET', 'DELETE'])
