@@ -84,7 +84,7 @@ Returns:
 def parse_options(options_data):
     # enumerate the options
     for i in range(len(options_data)):
-        options_data[i] = str(i + 1)+'.'+option
+        options_data[i] = str(i + 1)+'.'+ options_data[i]
 
     option_string = '\n'.join(options_data)
     return option_string
@@ -142,11 +142,14 @@ def create_drones(numbers, hive_id):
             # assign properties
             drone[number_key] = num
             drone[last_request_key] = 'empty'
-            drone[last_response_key] = 'empty'
+            drone[last_response_key] = 0
             drone[hive_token_key] = hive_id
 
             # insert the drone and get its id
             drone_id = drones.insert_one(drone).inserted_id
+            # drone_to_store = {id_key:drone_id}
+
+            # json returned shouldn't contain and objectId
             drone[id_key] = str(drone_id)
 
             # get relevant hive and update it's drones property
@@ -209,26 +212,40 @@ def delete_hive(hive_id):
     hives.remove({hive_token_key: hive_id})
 
 def delete_drones_by_number(hive_id, numbers):
-    hive_query = {hive_token_key: hive_id}
+    hive_query = {hive_token_key: ObjectId(hive_id)}
 
     drones_deleted = []
-
+    hive = hives.find_one({id_key:ObjectId(hive_id)})
+    all_drones = list(hive[drones_key])
     for num in numbers:
         #check that this hive has the drone
         find_drone_query = {number_key: num, hive_token_key: hive_id}
         drone = drones.find_one(find_drone_query)
 
+        #TODO: Fix this terrible replacement
         if drone is not None:
+            for drone_id in all_drones:
+                if str(drone_id) == str(drone[id_key]):
+                    print('removing from all drones')
+                    all_drones.remove(drone_id)
+                    break
 
+            '''The strategy below failed, more efficient see if can fix later'''
             #build query for this drone
-            drone_object_id = drone[id_key]
-            drone_query = { drones_key: {id_key: drone_object_id} }
+            # drone_object_id = str(drone[id_key])
+
+            # drone_query = { drones_key: {id_key: drone_object_id}}
 
             # pull the drone out of this hive
-            hives.update_one( hive_query, {'$pull': drone_query})
-            drones.remove({find_drone_query})
+            # update_result = hives.update_one(hive_query, {'$pull': drone_query})
+
+            ## end of old strategy
+
+            drones.remove(find_drone_query)
             drones_deleted.append(drone)
 
+
+    the_update = hives.update_one({id_key:ObjectId(hive_id)}, {'$set': {drones_key:all_drones}})
     return drones_deleted
 
 # ROUTES
@@ -289,9 +306,9 @@ def build_drones(hive_id=None):
         missing_id.status_code = 400
         return missing_id
 
+    numbers = list(request.json[numbers_key])
     if request.method == 'POST':
         # create a list of numbers from response body
-        numbers = list(request.json[numbers_key])
         drones_created = create_drones(numbers, hive_id)
 
         return jsonify({'drones': drones_created})
@@ -390,9 +407,7 @@ def relay_response():
     #TODO error handle single digits greater than 3
     if len(reply) < 2 and reply.isdigit():
         print('good reply')
-        drones.update({number_key: from_num},
-                      { '$set': {last_response_key: reply}},
-                        multi = True)
+
     else:
         print('bad reply')
         message = 'Please respond with a single digit corresponding to one of the options given'
@@ -402,6 +417,10 @@ def relay_response():
     	body = message
         )
 
+        #update drone with appropriate message
+        drones.update({number_key: from_num},
+                      { '$set': {last_response_key: reply}},
+                        multi = True)
     #update the last_response field of drones with response sent here
     return jsonify({'message': 'thanks twilio!'})
 
